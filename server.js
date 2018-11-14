@@ -14,6 +14,8 @@ const hash = require('object-hash');
 const fileHash = Util.promisify(require('md5-file'));
 const pathExists = require('path-exists');
 const writeFile = Util.promisify(require('fs').writeFile);
+const convert = require('color-convert');
+const download = require('download');
 
 const server=Hapi.server({
     host:'localhost',
@@ -49,7 +51,9 @@ const textHandler = async function(request, h) {
 
     const config = {
         hash: await fileHash(blendFile),
-        text: request.params.text
+        text: request.params.text,
+        color: convert.hex.rgb('#'+request.params.color).map(function(c) { return c / 255 }),
+        camera: request.params.camera
     };
 
     const resultId = hash(config);
@@ -58,7 +62,43 @@ const textHandler = async function(request, h) {
 
     if (!exists) {
         await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
-        await exec('blender '+blendFile+' --background --python renderText.py -- temp/'+resultId+'.png temp/'+resultId+'.json');
+        const result = await exec('blender '+blendFile+' --background --python renderText.py -- temp/'+resultId+'.png temp/'+resultId+'.json');
+        console.log(result);
+    }
+
+    const image = await readFile('./temp/'+resultId+'.png');
+    const response = h.response(image);
+    response.type('image/png');
+    response.header('Content-Disposition', 'inline');
+
+    return response;
+}
+
+const frameHandler = async function(request, h) {
+    const blendFile = 'frame.blend';
+
+    const blendHash = await fileHash(blendFile);
+    const config = {
+        hash: blendHash,
+        texture: blendHash+'_texture1.jpg'
+    };
+
+    const textureExists = await pathExists('./temp/'+config.texture);
+    if (!textureExists) {
+        const texture = await download(request.query.url);
+        await writeFile('./temp/'+config.texture, texture);
+    }
+
+    const resultId = hash(config);
+
+    const exists = await pathExists('./temp/'+resultId+'.png');
+
+    if (!exists) {
+        await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
+        const command = 'blender '+blendFile+' --background --python renderFrame.py -- temp/'+resultId+'.png temp/'+resultId+'.json';
+        console.log(command);
+        const result = await exec(command);
+        console.log(result);
     }
 
     const image = await readFile('./temp/'+resultId+'.png');
@@ -89,7 +129,7 @@ server.route({
 
 server.route({
     method:'GET',
-    path:'/text/{text}',
+    path:'/text/{text}-{color}-{camera}.png',
     options: {
         handler: textHandler,
         description: 'render text',
@@ -97,9 +137,38 @@ server.route({
         tags: ['api'], // ADD THIS TAG
         validate: {
             params: {
-                text : Joi.string()
-                        .required()
-                        .description('text to render'),
+                text: Joi.string()
+                    .required()
+                    .description('text to render'),
+                color: Joi
+                    .string()
+                    .valid('ff00ff', '00ff00', '808080')
+                    .default('ff00ff')
+                    .required(),
+                camera: Joi
+                    .string()
+                    .valid('Camera1', 'Camera2')
+                    .default('Camera1')
+                    .required()
+            }
+        }
+    }
+});
+
+server.route({
+    method:'GET',
+    path:'/frame',
+    options: {
+        handler: frameHandler,
+        description: 'render text',
+        notes: 'Renders a image in a frame',
+        tags: ['api'],
+        validate: {
+            query: {
+                url: Joi.string()
+                    .default('https://octodex.github.com/images/privateinvestocat.jpg')
+                    .required()
+                    .description('image to render'),
             }
         }
     }

@@ -17,6 +17,8 @@
   },
   "homepage": "https://github.com/bitterulf/blenderGate#readme",
   "dependencies": {
+    "color-convert": "^1.9.3",
+    "download": "^7.1.0",
     "hapi": "^17.7.0",
     "hapi-swagger": "^9.1.2",
     "inert": "^5.1.2",
