@@ -77,10 +77,12 @@ const textHandler = async function(request, h) {
 const frameHandler = async function(request, h) {
     const blendFile = 'frame.blend';
 
+    const urlHash = hash({ url: request.query.url });
+
     const blendHash = await fileHash(blendFile);
     const config = {
         hash: blendHash,
-        texture: blendHash+'_texture1.jpg'
+        texture: urlHash+'texture1.jpg'
     };
 
     const textureExists = await pathExists('./temp/'+config.texture);
@@ -96,6 +98,35 @@ const frameHandler = async function(request, h) {
     if (!exists) {
         await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
         const command = 'blender '+blendFile+' --background --python renderFrame.py -- temp/'+resultId+'.png temp/'+resultId+'.json';
+        console.log(command);
+        const result = await exec(command);
+        console.log(result);
+    }
+
+    const image = await readFile('./temp/'+resultId+'.png');
+    const response = h.response(image);
+    response.type('image/png');
+    response.header('Content-Disposition', 'inline');
+
+    return response;
+}
+
+const textureHandler = async function(request, h) {
+    const blendFile = 'texture.blend';
+
+    const blendHash = await fileHash(blendFile);
+    const config = {
+        size: request.query.size,
+        hash: blendHash
+    };
+
+    const resultId = hash(config);
+
+    const exists = await pathExists('./temp/'+resultId+'.png');
+
+    if (!exists) {
+        await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
+        const command = 'blender '+blendFile+' --background --python renderTexture.py -- temp/'+resultId+'.png temp/'+resultId+'.json';
         console.log(command);
         const result = await exec(command);
         console.log(result);
@@ -157,7 +188,7 @@ server.route({
 
 server.route({
     method:'GET',
-    path:'/frame',
+    path:'/frame.png',
     options: {
         handler: frameHandler,
         description: 'render text',
@@ -169,6 +200,25 @@ server.route({
                     .default('https://octodex.github.com/images/privateinvestocat.jpg')
                     .required()
                     .description('image to render'),
+            }
+        }
+    }
+});
+
+server.route({
+    method:'GET',
+    path:'/texture.png',
+    options: {
+        handler: textureHandler,
+        description: 'render texture',
+        notes: 'Renders a texture',
+        tags: ['api'],
+        validate: {
+            query: {
+                size: Joi.number()
+                    .default(1)
+                    .required()
+                    .description('texture scaling'),
             }
         }
     }
