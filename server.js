@@ -16,6 +16,7 @@ const pathExists = require('path-exists');
 const writeFile = Util.promisify(require('fs').writeFile);
 const convert = require('color-convert');
 const download = require('download');
+const trace = Util.promisify(require('potrace').trace);
 
 const server=Hapi.server({
     host:'localhost',
@@ -70,6 +71,65 @@ const textHandler = async function(request, h) {
     const response = h.response(image);
     response.type('image/png');
     response.header('Content-Disposition', 'inline');
+
+    return response;
+}
+
+const extrudeHandler = async function(request, h) {
+    const blendFile = 'extrude.blend';
+
+    const urlHash = hash({ url: request.query.url });
+
+    const blendHash = await fileHash(blendFile);
+    const config = {
+        hash: blendHash,
+        svg: urlHash+'.svg'
+    };
+
+    const svgExists = await pathExists('./temp/'+config.svg);
+    if (!svgExists) {
+        const svg = await download(request.query.url);
+        await writeFile('./temp/'+config.svg, svg);
+    }
+
+    const resultId = hash(config);
+
+    const exists = await pathExists('./temp/'+resultId+'.png');
+
+    if (!exists) {
+        await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
+        const command = 'blender '+blendFile+' --background --python renderExtrude.py -- temp/'+resultId+'.png temp/'+resultId+'.json';
+        console.log(command);
+        const result = await exec(command);
+        console.log(result);
+    }
+
+    const image = await readFile('./temp/'+resultId+'.png');
+    const response = h.response(image);
+    response.type('image/png');
+    response.header('Content-Disposition', 'inline');
+
+    return response;
+}
+
+const svgHandler = async function(request, h) {
+
+    const urlHash = hash({ url: request.query.url });
+
+    const config = {
+        image: urlHash
+    };
+
+    const imageExists = await pathExists('./temp/'+config.image+'.svg');
+    if (!imageExists) {
+        const image = await download(request.query.url);
+        const convertedImage = await trace(image);
+        await writeFile('./temp/'+config.image+'.svg', convertedImage);
+    }
+
+    const image = await readFile('./temp/'+config.image+'.svg');
+    const response = h.response(image.toString());
+    response.type('image/svg+xml');
 
     return response;
 }
@@ -219,6 +279,44 @@ server.route({
                     .default(1)
                     .required()
                     .description('texture scaling'),
+            }
+        }
+    }
+});
+
+server.route({
+    method:'GET',
+    path:'/converted.svg',
+    options: {
+        handler: svgHandler,
+        description: 'convert image to svg',
+        notes: 'only one color',
+        tags: ['api'],
+        validate: {
+            query: {
+                url: Joi.string()
+                    .default('https://octodex.github.com/images/octobiwan.jpg')
+                    .required()
+                    .description('image to convert'),
+            }
+        }
+    }
+});
+
+server.route({
+    method:'GET',
+    path:'/extrude.png',
+    options: {
+        handler: extrudeHandler,
+        description: 'extrude svg',
+        notes: 'extrude vector image',
+        tags: ['api'],
+        validate: {
+            query: {
+                url: Joi.string()
+                    .default('https://simpleicons.org/icons/github.svg')
+                    .required()
+                    .description('image to convert'),
             }
         }
     }
