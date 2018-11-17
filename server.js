@@ -231,6 +231,37 @@ const solidHandler = async function(request, h) {
     return response;
 }
 
+const combineHandler = async function(request, h) {
+    const blendFile = 'combine.blend';
+
+    const blendHash = await fileHash(blendFile);
+    const config = {
+        Corner1: request.query.Corner1,
+        Corner2: request.query.Corner2,
+        Corner3: request.query.Corner3,
+        Corner4: request.query.Corner4
+    };
+
+    const resultId = hash(config);
+
+    const exists = await pathExists('./temp/'+resultId+'.png');
+
+    if (!exists) {
+        await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
+        const command = 'blender '+blendFile+' --background --python renderCombine.py -- temp/'+resultId+'.png temp/'+resultId+'.json';
+        console.log(command);
+        const result = await exec(command);
+        console.log(result);
+    }
+
+    const image = await readFile('./temp/'+resultId+'.png');
+    const response = h.response(image);
+    response.type('image/png');
+    response.header('Content-Disposition', 'inline');
+
+    return response;
+}
+
 server.route({
     method:'GET',
     path:'/simpletext/{text}',
@@ -378,6 +409,41 @@ server.route({
                     .default('DarkerMat')
                     .required()
                     .description('mat2'),
+            }
+        }
+    }
+});
+
+server.route({
+    method:'GET',
+    path:'/combine.png',
+    options: {
+        handler: combineHandler,
+        description: 'solid',
+        notes: 'solid',
+        tags: ['api'],
+        validate: {
+            query: {
+                Corner1: Joi.string()
+                    .valid('solid', 'damaged')
+                    .default('solid')
+                    .required()
+                    .description('Corner1'),
+                Corner2: Joi.string()
+                    .valid('solid', 'damaged')
+                    .default('solid')
+                    .required()
+                    .description('Corner2'),
+                Corner3: Joi.string()
+                    .valid('solid', 'damaged')
+                    .default('solid')
+                    .required()
+                    .description('Corner3'),
+                Corner4: Joi.string()
+                    .valid('solid', 'damaged')
+                    .default('solid')
+                    .required()
+                    .description('Corner4')
             }
         }
     }
