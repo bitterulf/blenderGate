@@ -200,6 +200,37 @@ const textureHandler = async function(request, h) {
     return response;
 }
 
+const solidHandler = async function(request, h) {
+    const blendFile = 'solid.blend';
+
+    const blendHash = await fileHash(blendFile);
+    const config = {
+        shape: request.query.shape,
+        mat1: request.query.mat1,
+        mat2: request.query.mat2,
+        hash: blendHash
+    };
+
+    const resultId = hash(config);
+
+    const exists = await pathExists('./temp/'+resultId+'.png');
+
+    if (!exists) {
+        await writeFile('./temp/'+resultId+'.json', JSON.stringify(config));
+        const command = 'blender '+blendFile+' --background --python renderSolid.py -- temp/'+resultId+'.png temp/'+resultId+'.json';
+        console.log(command);
+        const result = await exec(command);
+        console.log(result);
+    }
+
+    const image = await readFile('./temp/'+resultId+'.png');
+    const response = h.response(image);
+    response.type('image/png');
+    response.header('Content-Disposition', 'inline');
+
+    return response;
+}
+
 server.route({
     method:'GET',
     path:'/simpletext/{text}',
@@ -317,6 +348,36 @@ server.route({
                     .default('https://simpleicons.org/icons/github.svg')
                     .required()
                     .description('image to convert'),
+            }
+        }
+    }
+});
+
+server.route({
+    method:'GET',
+    path:'/solid.png',
+    options: {
+        handler: solidHandler,
+        description: 'solid',
+        notes: 'solid',
+        tags: ['api'],
+        validate: {
+            query: {
+                shape: Joi.string()
+                    .valid('Shape1', 'Shape2', 'Shape2', 'Shape3', 'Shape4', 'Shape5')
+                    .default('Shape1')
+                    .required()
+                    .description('shape'),
+                mat1: Joi.string()
+                    .valid('Mat', 'DarkerMat', 'StrangeMat')
+                    .default('Mat')
+                    .required()
+                    .description('mat1'),
+                mat2: Joi.string()
+                    .valid('Mat', 'DarkerMat', 'StrangeMat')
+                    .default('DarkerMat')
+                    .required()
+                    .description('mat2'),
             }
         }
     }
